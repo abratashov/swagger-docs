@@ -42,6 +42,50 @@ module Swagger
           :description => description, :required => required == :required}.merge(hash)
       end
 
+      # helper method to generate complex object
+      def param_object(klass, params={})
+        klass_ancestors = eval(klass).ancestors.map(&:to_s)
+        if klass_ancestors.include?('ActiveRecord::Base')
+          param_active_record(klass, params)
+        elsif klass_ancestors.include?('Virtus::Model::Core')
+          param_virtus(klass, params)
+        end
+      end
+
+      # helper method to generate ActiveRecord::Base object
+      def param_active_record(klass, params={})
+        remove_attributes = [:id, :created_at, :updated_at]
+        remove_attributes += params[:remove] if params[:remove]
+
+        test = eval(klass).new
+        test.valid?
+        eval(klass).columns.each do |column|
+          unless remove_attributes.include?(column.name.to_sym)
+            param column.name.to_sym,
+                  column.name.to_sym,
+                  column.type.to_sym,
+                  (test.errors.messages[column.name.to_sym] ? :required : :optional),
+                  column.name.split('_').map(&:capitalize).join(' ')
+          end
+        end
+      end
+
+      # helper method to generate Virtus object
+      def param_virtus(klass, params={})
+        remove_attributes = []
+        remove_attributes += params[:remove] if params[:remove]
+
+        eval(klass).new.attributes.keys.each do |key|
+          unless remove_attributes.include?(key)
+            param key,
+                  key,
+                  :unrecognized,
+                  :optional,
+                  key.to_s.split('_').map(&:capitalize).join(' ')
+          end
+        end
+      end
+  
       # helper method to generate enums
       def param_list(param_type, name, type, required, description = nil, allowed_values = [], hash = {})
         hash.merge!({allowable_values: {value_type: "LIST", values: allowed_values}})
